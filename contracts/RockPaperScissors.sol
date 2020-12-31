@@ -3,7 +3,7 @@
 //B9lab ETH-SUB Ethereum Developer Subscription Course
 //>>> RockPaperScissors <<<
 //
-//Last update: 29.12.2020
+//Last update: 31.12.2020
 
 pragma solidity 0.7.6;
 
@@ -30,9 +30,9 @@ contract RockPaperScissors is Stoppable{
     /**
      * Game status:
      *  "0": open           (Game not started)
-     *  "1": started        (Game started, player1 submitted encrypted bet)
+     *  "1": started        (Player1 submitted encrypted bet)
      *  "2": participated   (Player2 submitted bet)
-     *  "3": ended          (Player1 revealed bet and winner elected)
+     *  "3": ended          (Player1 revealed bet and winner is elected)
      */
     enum Status{
         open,
@@ -66,8 +66,8 @@ contract RockPaperScissors is Stoppable{
     //Accounting
     mapping (address => uint) public accountBalance;
 
-    event LogGameStarted(bytes32 indexed gameHash, address indexed player1, address indexed player2, uint stake);
-    event LogGameParticipated(bytes32 indexed gameHash, address indexed player2, Symbol bet);
+    event LogGameStarted(bytes32 indexed gameHash, address indexed player1, address indexed player2, uint gameStake, bool usePlayerStake);
+    event LogGameParticipated(bytes32 indexed gameHash, address indexed player2, Symbol bet, bool usePlayerStake);
     event LogGameEnded(bytes32 indexed gameHash, address indexed player1, Symbol bet, GameOutcome outcome);
     event LogWithdraw(address indexed player, uint amount);
 
@@ -103,19 +103,30 @@ contract RockPaperScissors is Stoppable{
      *
      * @param gameHash gameHash that was created by createGameHash() by player1
      * @param opponent The address of player2 which player1 wants to play with
+     * @param usePlayerStake Player1 can decide to use either msg.value or her/his player contract balance to play
      */
-    function startGame(bytes32 gameHash, address opponent) public payable onlyIfRunning returns(bool success){
+    function startGame(bytes32 gameHash, address opponent, bool usePlayerStake) public payable onlyIfRunning returns(bool success){
         require(gameHash != "", "gameHash has to be provided");
         require(opponent != address(0x0) && opponent != msg.sender, "Bad opponent");
 
         require(games[gameHash].status == Status.open, "Game must be unique");
 
+        uint gameStake;
+        if(usePlayerStake){
+            require(msg.value == 0, "Sending value while using players stake is prohibited");
+            gameStake = accountBalance[msg.sender];
+            accountBalance[msg.sender] = 0;
+        }
+        else{
+            gameStake = msg.value;
+        }
+
         games[gameHash].player1 = msg.sender;
         games[gameHash].player2 = opponent;
-        games[gameHash].stake = msg.value;
+        games[gameHash].stake = gameStake;
         games[gameHash].status = Status.started;
 
-        emit LogGameStarted(gameHash, msg.sender, opponent, msg.value);
+        emit LogGameStarted(gameHash, msg.sender, opponent, gameStake, usePlayerStake);
         return true;
     }
 
@@ -124,19 +135,29 @@ contract RockPaperScissors is Stoppable{
      *
      * @param gameHash gameHash that player2 is associated with
      * @param bet The game symbol selected by player2
+     * @param usePlayerStake Player2 can decide to use either msg.value or her/his player contract balance to play
      */
-    function participateGame(bytes32 gameHash, Symbol bet) public payable onlyIfRunning returns(bool success){
+    function participateGame(bytes32 gameHash, Symbol bet, bool usePlayerStake) public payable onlyIfRunning returns(bool success){
         require(gameHash != "", "gameHash has to be provided");
         require(Symbol.none < bet && bet <= Symbol.scissors, "Bet is invalid. Select 'Rock', 'Paper' or 'Scissors'!");
 
         require(games[gameHash].status == Status.started, "Game has not been started yet");
         require(games[gameHash].player2 == msg.sender, "msg.sender is not player2");
-        require(games[gameHash].stake == msg.value, "msg.value does not match games stake");
+
+        uint gameStake = games[gameHash].stake;
+        if(usePlayerStake){
+            require(gameStake <= accountBalance[msg.sender], "Players stake is insufficient");
+            require(msg.value == 0, "Sending value while using players stake is prohibited");
+            accountBalance[msg.sender] = accountBalance[msg.sender].sub(gameStake);
+        }
+        else{
+            require(gameStake == msg.value, "msg.value does not match games stake");
+        }
 
         games[gameHash].bet2 = bet;
         games[gameHash].status = Status.participated;
 
-        emit LogGameParticipated(gameHash, msg.sender, bet);
+        emit LogGameParticipated(gameHash, msg.sender, bet, usePlayerStake);
         return true;
     }
 
