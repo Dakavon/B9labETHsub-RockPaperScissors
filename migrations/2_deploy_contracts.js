@@ -9,10 +9,12 @@ module.exports = function (deployer, network, accounts) {
         destroyed: 2,
     };
 
+    const blocksReactionTime = '100';
+
     if(network === "ropsten"){
         //TODO
     }
     else if(network === "develop"){
-        deployer.deploy(RockPaperScissors, contractState.running, {from: accounts[0]});
+        deployer.deploy(RockPaperScissors, contractState.running, blocksReactionTime, {from: accounts[0]});
     }
 };

@@ -3,7 +3,7 @@
 //B9lab ETH-SUB Ethereum Developer Subscription Course
 //>>> RockPaperScissors <<<
 //
-//Last update: 31.12.2020
+//Last update: 03.01.2021
 
 pragma solidity 0.7.6;
 
@@ -59,6 +59,7 @@ contract RockPaperScissors is Stoppable{
         address player2;
         uint    stake;
         Symbol  bet2;
+        uint    deadline;
         Status  status;
     }
     mapping (bytes32 => Game) public games;
@@ -66,17 +67,27 @@ contract RockPaperScissors is Stoppable{
     //Accounting
     mapping (address => uint) public accountBalance;
 
-    event LogGameStarted(bytes32 indexed gameHash, address indexed player1, address indexed player2, uint gameStake, bool usePlayerStake);
-    event LogGameParticipated(bytes32 indexed gameHash, address indexed player2, Symbol bet, bool usePlayerStake);
+    //Players have a specific time duration to submit their bet before game can be retracted
+    uint public blocksReactionTime;
+
+    /**
+     * Events
+     */
+    event LogGameStarted(bytes32 indexed gameHash, address indexed player1, address indexed player2, uint gameStake, bool usePlayerStake, uint deadline);
+    event LogGameParticipated(bytes32 indexed gameHash, address indexed player2, Symbol bet, bool usePlayerStake, uint deadline);
     event LogGameEnded(bytes32 indexed gameHash, address indexed player1, Symbol bet, GameOutcome outcome);
+    event LogGameRetracted(bytes32 indexed gameHash, address indexed player);
     event LogWithdraw(address indexed player, uint amount);
+    event LogBlocksReactionTimeSet(address indexed sender, uint newBlocksReactionTime);
 
     /**
      * @dev Contract constructor function
      *
      * @param initialState The state the contract is in after deployment (paused or running)
      */
-    constructor(State initialState) Stoppable(initialState) {
+    constructor(State initialState, uint _blocksReactionTime) Stoppable(initialState) {
+        setBlocksReactionTime(_blocksReactionTime);
+
         gameOutcomes[Symbol.rock][Symbol.paper] = GameOutcome.player2;
         gameOutcomes[Symbol.rock][Symbol.scissors] = GameOutcome.player1;
         gameOutcomes[Symbol.paper][Symbol.rock] = GameOutcome.player1;
@@ -121,12 +132,15 @@ contract RockPaperScissors is Stoppable{
             gameStake = msg.value;
         }
 
+        uint deadline = block.number.add(blocksReactionTime);
+
         games[gameHash].player1 = msg.sender;
         games[gameHash].player2 = opponent;
         games[gameHash].stake = gameStake;
+        games[gameHash].deadline = deadline;
         games[gameHash].status = Status.started;
 
-        emit LogGameStarted(gameHash, msg.sender, opponent, gameStake, usePlayerStake);
+        emit LogGameStarted(gameHash, msg.sender, opponent, gameStake, usePlayerStake, deadline);
         return true;
     }
 
@@ -154,10 +168,13 @@ contract RockPaperScissors is Stoppable{
             require(gameStake == msg.value, "msg.value does not match games stake");
         }
 
+        uint deadline = block.number.add(blocksReactionTime);
+
         games[gameHash].bet2 = bet;
+        games[gameHash].deadline = deadline;
         games[gameHash].status = Status.participated;
 
-        emit LogGameParticipated(gameHash, msg.sender, bet, usePlayerStake);
+        emit LogGameParticipated(gameHash, msg.sender, bet, usePlayerStake, deadline);
         return true;
     }
 
@@ -192,7 +209,6 @@ contract RockPaperScissors is Stoppable{
             accountBalance[player2] = accountBalance[player2].add(stake.mul(2));
         }
 
-        //Clean-up storage
         deleteGame(gameHash);
 
         emit LogGameEnded(gameHash, msg.sender, bet, outcome);
@@ -200,11 +216,11 @@ contract RockPaperScissors is Stoppable{
     }
 
     /**
-     * @dev delte game struct
+     * @dev Delete game struct of stored game
      *
-     * @param gameHash The game hash that should be deleted
+     * @param gameHash The game hash of the game that should be deleted
      */
-    function deleteGame(bytes32 gameHash) internal onlyIfRunning{
+    function deleteGame(bytes32 gameHash) internal{
         delete games[gameHash].player1;
         delete games[gameHash].player2;
         delete games[gameHash].stake;
@@ -214,7 +230,40 @@ contract RockPaperScissors is Stoppable{
     }
 
     /**
-     * @dev withdraw players account balance
+     * @dev Retract game if opponent refuses to play next move (by player1/player2)
+     *
+     * @param gameHash The game hash of the game that should be retracted
+     */
+     function retractGame(bytes32 gameHash) public onlyIfRunning returns(bool success){
+        require(gameHash != "", "gameHash has to be provided");
+        Status gameStatus = games[gameHash].status;
+        require(gameStatus != Status.open && gameStatus != Status.ended, "Game cannot be retracted");
+        require(games[gameHash].deadline < block.number, "Deadline is not expired yet");
+
+        uint stake = games[gameHash].stake;
+
+        if(gameStatus == Status.started){
+            require(games[gameHash].player1 == msg.sender, "Only player1 is allowed to retract at his point");
+
+            accountBalance[msg.sender] = accountBalance[msg.sender].add(stake);
+        }
+        else if(gameStatus == Status.participated){
+            require(games[gameHash].player2 == msg.sender, "Only player2 is allowed to retract at his point");
+
+            accountBalance[msg.sender] = accountBalance[msg.sender].add(stake.mul(2));
+        }
+        else{
+            revert("Something bad happened.");
+        }
+
+        deleteGame(gameHash);
+
+        emit LogGameRetracted(gameHash, msg.sender);
+        return true;
+    }
+
+    /**
+     * @dev Withdraw players account balance
      */
     function withdraw() public onlyIfRunning returns(bool success){
         uint amount = accountBalance[msg.sender];
@@ -227,5 +276,19 @@ contract RockPaperScissors is Stoppable{
         //Avoidance of Solidity's transfer() or send() methods
         (success, ) = msg.sender.call{value: amount}("");
         require(success, "Transfer failed");
+    }
+
+    /**
+     * @dev Players reaction time can be tuned (by owner)
+     *
+     * @param newBlocksReactionTime Time duration in blocks until game can be retracted by player1/player2
+     */
+    function setBlocksReactionTime(uint newBlocksReactionTime) public onlyOwner returns(bool success){
+        require(0 < newBlocksReactionTime, "blocksReactionTime needs to be set");
+
+        blocksReactionTime = newBlocksReactionTime;
+
+        emit LogBlocksReactionTimeSet(msg.sender, newBlocksReactionTime);
+        return true;
     }
 }
