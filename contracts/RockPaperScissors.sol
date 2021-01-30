@@ -29,13 +29,13 @@ contract RockPaperScissors is Stoppable{
 
     /**
      * Game status:
-     *  "0": open           (Game not started)
+     *  "0": nonExistent    (Game not started)
      *  "1": started        (Player1 submitted encrypted bet)
      *  "2": participated   (Player2 submitted bet)
      *  "3": ended          (Player1 revealed bet and winner is elected)
      */
     enum Status{
-        open,
+        nonExistent,
         started,
         participated,
         ended
@@ -95,7 +95,7 @@ contract RockPaperScissors is Stoppable{
      * @param purePassword Unique password given by player1
      */
     function createGameHash(Symbol bet, bytes32 purePassword) public view returns(bytes32 gameHash){
-        require(Symbol.none < bet && bet <= Symbol.scissors, "Bet is invalid. Select 'Rock', 'Paper' or 'Scissors'!");
+        require(Symbol.none < bet, "Bet is invalid. Select 'Rock', 'Paper' or 'Scissors'!");
         require(purePassword != "", "purePassword has to be provided");
 
         return keccak256(abi.encodePacked(bet, purePassword, msg.sender, address(this)));
@@ -112,7 +112,7 @@ contract RockPaperScissors is Stoppable{
         require(gameHash != "", "gameHash has to be provided");
         require(opponent != address(0x0) && opponent != msg.sender, "Bad opponent");
 
-        require(games[gameHash].status == Status.open, "Game must be unique");
+        require(games[gameHash].status == Status.nonExistent, "Game must be unique");
 
         uint gameStake;
         if(usePlayerStake){
@@ -144,16 +144,17 @@ contract RockPaperScissors is Stoppable{
      * @param usePlayerStake Player2 can decide to use either msg.value or her/his player contract balance to play
      */
     function participateGame(bytes32 gameHash, Symbol bet, bool usePlayerStake) public payable onlyIfRunning returns(bool success){
-        require(Symbol.none < bet && bet <= Symbol.scissors, "Bet is invalid. Select 'Rock', 'Paper' or 'Scissors'!");
+        require(Symbol.none < bet, "Bet is invalid. Select 'Rock', 'Paper' or 'Scissors'!");
 
         require(games[gameHash].status == Status.started, "Game has not been started yet");
         require(games[gameHash].player2 == msg.sender, "msg.sender is not player2");
 
         uint gameStake = games[gameHash].stake;
         if(usePlayerStake){
-            require(gameStake <= accountBalance[msg.sender], "Players stake is insufficient");
+            uint playerStake = accountBalance[msg.sender];
+            require(gameStake <= playerStake, "Players stake is insufficient");
             require(msg.value == 0, "Sending value while using players stake is prohibited");
-            accountBalance[msg.sender] = accountBalance[msg.sender].sub(gameStake);
+            accountBalance[msg.sender] = playerStake.sub(gameStake);
         }
         else{
             require(gameStake == msg.value, "msg.value does not match games stake");
@@ -176,7 +177,7 @@ contract RockPaperScissors is Stoppable{
      * @param purePassword The password chosen by player1 during game start
      */
     function endGame(Symbol bet, bytes32 purePassword) public onlyIfRunning returns(uint gameResult){
-        require(Symbol.none < bet && bet <= Symbol.scissors, "Bet is invalid. Select 'Rock', 'Paper' or 'Scissors'!");
+        require(Symbol.none < bet, "Bet is invalid. Select 'Rock', 'Paper' or 'Scissors'!");
 
         bytes32 gameHash = createGameHash(bet, purePassword);
         require(games[gameHash].status == Status.participated, "Game does not exist or player2 has not placed a bet yet");
@@ -231,25 +232,22 @@ contract RockPaperScissors is Stoppable{
      * @param gameHash The game hash of the game that should be retracted
      */
      function retractGame(bytes32 gameHash) public onlyIfRunning returns(bool success){
-        require(gameHash != "", "gameHash has to be provided");
-        Status gameStatus = games[gameHash].status;
-        require(gameStatus != Status.open && gameStatus != Status.ended, "Game cannot be retracted");
         require(games[gameHash].deadline < block.number, "Deadline is not expired yet");
 
-        uint stake = games[gameHash].stake;
+        Status gameStatus = games[gameHash].status;
 
         if(gameStatus == Status.started){
             require(games[gameHash].player1 == msg.sender, "Only player1 is allowed to retract at his point");
 
-            accountBalance[msg.sender] = accountBalance[msg.sender].add(stake);
+            accountBalance[msg.sender] = accountBalance[msg.sender].add(games[gameHash].stake);
         }
         else if(gameStatus == Status.participated){
             require(games[gameHash].player2 == msg.sender, "Only player2 is allowed to retract at his point");
 
-            accountBalance[msg.sender] = accountBalance[msg.sender].add(stake.mul(2));
+            accountBalance[msg.sender] = accountBalance[msg.sender].add((games[gameHash].stake).mul(2));
         }
         else{
-            revert("Something bad happened.");
+            revert("Game cannot be retracted");
         }
 
         deleteGame(gameHash);

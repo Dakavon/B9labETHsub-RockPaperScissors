@@ -30,7 +30,7 @@ contract("RockPaperScissors", async (accounts) => {
         player2: 2,
     };
     const Status = {
-        open: 0,
+        nonExistent: 0,
         started: 1,
         participated: 2,
         ended: 3,
@@ -497,7 +497,7 @@ contract("RockPaperScissors", async (accounts) => {
 
             await truffleAssert.reverts(
                 instance.retractGame(hexEmptyGameHash, {from: player1}),
-                "gameHash has to be provided"
+                "Game cannot be retracted"
             );
         });
 
