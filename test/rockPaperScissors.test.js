@@ -122,44 +122,6 @@ contract("RockPaperScissors", async (accounts) => {
             const _blocksReactionTime = await instance.blocksReactionTime({from: player1});
             assert.strictEqual(_blocksReactionTime.toString(10), blocksReactionTime, "blocksReactionTime was not stored correctly");
         });
-
-        it("game outcomes should be stored correctly", async () => {
-            const instance = await RockPaperScissors.new(
-                contractState.running, blocksReactionTime,
-                {from: owner}
-            );
-
-            var outcome;
-
-            //Player1: rock, Player2: rock
-            outcome = await instance.gameOutcomes(Symbol.rock, Symbol.rock);
-            assert.strictEqual(outcome.toNumber(), gameOutcome.draw, "outcome was not saved correctly");
-            //Player1: paper, Player2: paper
-            outcome = await instance.gameOutcomes(Symbol.paper, Symbol.paper);
-            assert.strictEqual(outcome.toNumber(), gameOutcome.draw, "outcome was not saved correctly");
-            //Player1: scissors, Player2: scissors
-            outcome = await instance.gameOutcomes(Symbol.scissors, Symbol.scissors);
-            assert.strictEqual(outcome.toNumber(), gameOutcome.draw, "outcome was not saved correctly");
-
-            //Player1: rock, Player2: paper
-            outcome = await instance.gameOutcomes(Symbol.rock, Symbol.paper);
-            assert.strictEqual(outcome.toNumber(), gameOutcome.player2, "outcome was not saved correctly");
-            //Player1: rock, Player2: scissors
-            outcome = await instance.gameOutcomes(Symbol.rock, Symbol.scissors);
-            assert.strictEqual(outcome.toNumber(), gameOutcome.player1, "outcome was not saved correctly");
-            //Player1: paper, Player2: rock
-            outcome = await instance.gameOutcomes(Symbol.paper, Symbol.rock);
-            assert.strictEqual(outcome.toNumber(), gameOutcome.player1, "outcome was not saved correctly");
-            //Player1: paper, Player2: scissors
-            outcome = await instance.gameOutcomes(Symbol.paper, Symbol.scissors);
-            assert.strictEqual(outcome.toNumber(), gameOutcome.player2, "outcome was not saved correctly");
-            //Player1: scissors, Player2: rock
-            outcome = await instance.gameOutcomes(Symbol.scissors, Symbol.rock);
-            assert.strictEqual(outcome.toNumber(), gameOutcome.player2, "outcome was not saved correctly");
-            //Player1: scissors, Player2: paper
-            outcome = await instance.gameOutcomes(Symbol.scissors, Symbol.paper);
-            assert.strictEqual(outcome.toNumber(), gameOutcome.player1, "outcome was not saved correctly");
-        });
     });
 
 
@@ -328,7 +290,7 @@ contract("RockPaperScissors", async (accounts) => {
 
             await truffleAssert.reverts(
                 instance.participateGame(hexEmptyGameHash, gameSymbolPlayer2, useMsgValue, {from: player2, value: gameStake}),
-                "gameHash has to be provided"
+                "Game has not been started yet"
             );
         });
 
@@ -480,11 +442,11 @@ contract("RockPaperScissors", async (accounts) => {
             const logGameHash   = txObj.receipt.logs[0].args.gameHash;
             const logSender     = txObj.receipt.logs[0].args.player1;
             const logSymbol     = txObj.receipt.logs[0].args.bet;
-            const logOutcome    = txObj.receipt.logs[0].args.outcome;
+            const logGameResult = txObj.receipt.logs[0].args.gameResult;
             assert.strictEqual(logGameHash, gameHash, "gameHash was not logged correctly");
             assert.strictEqual(logSender, player1, "msg.sender was not logged correctly");
             assert.strictEqual(logSymbol.toString(10), gameSymbolPlayer1.toString(10), "bet was not logged correctly");
-            assert.strictEqual(logOutcome.toString(10), (gameOutcome.player1).toString(10), "outcome was not logged correctly");
+            assert.strictEqual(logGameResult.toString(10), (gameOutcome.player1).toString(10), "gameResult was not logged correctly");
 
             const game = await instance.games(gameHash);
             assert.strictEqual(game.player1, zeroAddress, "player1 is still stored");
@@ -779,16 +741,16 @@ contract("RockPaperScissors", async (accounts) => {
             await instance.participateGame(gameHash, Symbol.rock, useMsgValue, {from: player2, value: gameStake});
             const txObj = await instance.endGame(Symbol.rock, hexClearPassword, {from: player1});
 
-            const logOutcome    = txObj.receipt.logs[0].args.outcome;
-            assert.strictEqual(logOutcome.toString(10), (gameOutcome.draw).toString(10), "outcome was not correct");
+            const logGameResult = txObj.receipt.logs[0].args.gameResult;
+            assert.strictEqual(logGameResult.toString(10), (gameOutcome.draw).toString(10), "gameResult was not correct");
         });
 
         it("- player1 wins", async () => {
             await instance.participateGame(gameHash, Symbol.scissors, useMsgValue, {from: player2, value: gameStake});
             const txObj = await instance.endGame(Symbol.rock, hexClearPassword, {from: player1});
 
-            const logOutcome = txObj.receipt.logs[0].args.outcome;
-            assert.strictEqual(logOutcome.toString(10), (gameOutcome.player1).toString(10), "outcome was not correct");
+            const logGameResult = txObj.receipt.logs[0].args.gameResult;
+            assert.strictEqual(logGameResult.toString(10), (gameOutcome.player1).toString(10), "gameResult was not correct");
         });
 
         it("-- should not be possible to start a game by player1 with player stake when sending value", async () => {
@@ -851,8 +813,8 @@ contract("RockPaperScissors", async (accounts) => {
             await instance.participateGame(gameHash, Symbol.paper, useMsgValue, {from: player2, value: gameStake});
             const txObj = await instance.endGame(Symbol.rock, hexClearPassword, {from: player1});
 
-            const logOutcome = txObj.receipt.logs[0].args.outcome;
-            assert.strictEqual(logOutcome.toString(10), (gameOutcome.player2).toString(10), "outcome was not correct");
+            const logGameResult = txObj.receipt.logs[0].args.gameResult;
+            assert.strictEqual(logGameResult.toString(10), (gameOutcome.player2).toString(10), "gameResult was not correct");
         });
 
         it("-- should not be possible to participate a game by player2 with player stake when sending value", async () => {

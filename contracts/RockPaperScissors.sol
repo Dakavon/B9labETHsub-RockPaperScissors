@@ -3,7 +3,7 @@
 //B9lab ETH-SUB Ethereum Developer Subscription Course
 //>>> RockPaperScissors <<<
 //
-//Last update: 03.01.2021
+//Last update: 30.01.2021
 
 pragma solidity 0.7.6;
 
@@ -49,7 +49,6 @@ contract RockPaperScissors is Stoppable{
         player1,
         player2
     }
-    mapping (Symbol => mapping (Symbol => GameOutcome)) public gameOutcomes;
 
     /**
      * Struct for each game between player1 and player2
@@ -75,7 +74,7 @@ contract RockPaperScissors is Stoppable{
      */
     event LogGameStarted(bytes32 indexed gameHash, address indexed player1, address indexed player2, uint gameStake, bool usePlayerStake, uint deadline);
     event LogGameParticipated(bytes32 indexed gameHash, address indexed player2, Symbol bet, bool usePlayerStake, uint deadline);
-    event LogGameEnded(bytes32 indexed gameHash, address indexed player1, Symbol bet, GameOutcome outcome);
+    event LogGameEnded(bytes32 indexed gameHash, address indexed player1, Symbol bet, uint gameResult);
     event LogGameRetracted(bytes32 indexed gameHash, address indexed player);
     event LogWithdraw(address indexed player, uint amount);
     event LogBlocksReactionTimeSet(address indexed sender, uint newBlocksReactionTime);
@@ -87,13 +86,6 @@ contract RockPaperScissors is Stoppable{
      */
     constructor(State initialState, uint _blocksReactionTime) Stoppable(initialState) {
         setBlocksReactionTime(_blocksReactionTime);
-
-        gameOutcomes[Symbol.rock][Symbol.paper] = GameOutcome.player2;
-        gameOutcomes[Symbol.rock][Symbol.scissors] = GameOutcome.player1;
-        gameOutcomes[Symbol.paper][Symbol.rock] = GameOutcome.player1;
-        gameOutcomes[Symbol.paper][Symbol.scissors] = GameOutcome.player2;
-        gameOutcomes[Symbol.scissors][Symbol.rock] = GameOutcome.player2;
-        gameOutcomes[Symbol.scissors][Symbol.paper] = GameOutcome.player1;
     }
 
     /**
@@ -152,7 +144,6 @@ contract RockPaperScissors is Stoppable{
      * @param usePlayerStake Player2 can decide to use either msg.value or her/his player contract balance to play
      */
     function participateGame(bytes32 gameHash, Symbol bet, bool usePlayerStake) public payable onlyIfRunning returns(bool success){
-        require(gameHash != "", "gameHash has to be provided");
         require(Symbol.none < bet && bet <= Symbol.scissors, "Bet is invalid. Select 'Rock', 'Paper' or 'Scissors'!");
 
         require(games[gameHash].status == Status.started, "Game has not been started yet");
@@ -184,7 +175,7 @@ contract RockPaperScissors is Stoppable{
      * @param bet The game symbol that was selected by player1 during game start
      * @param purePassword The password chosen by player1 during game start
      */
-    function endGame(Symbol bet, bytes32 purePassword) public onlyIfRunning returns(GameOutcome outcome){
+    function endGame(Symbol bet, bytes32 purePassword) public onlyIfRunning returns(uint gameResult){
         require(Symbol.none < bet && bet <= Symbol.scissors, "Bet is invalid. Select 'Rock', 'Paper' or 'Scissors'!");
 
         bytes32 gameHash = createGameHash(bet, purePassword);
@@ -195,24 +186,28 @@ contract RockPaperScissors is Stoppable{
         Symbol bet2     = games[gameHash].bet2;
         uint stake      = games[gameHash].stake;
 
-        //Identify winner
-        if(gameOutcomes[bet][bet2] == GameOutcome.draw){
+        //Identify winning player:
+        //  (3 + betPlayer1 - betPlayer2) % 3
+        gameResult = (uint(3).add(uint(bet)).sub(uint(bet2))).mod(3);
+
+        if(gameResult == uint(GameOutcome.draw)){
             accountBalance[player1] = accountBalance[player1].add(stake);
             accountBalance[player2] = accountBalance[player2].add(stake);
         }
-        else if(gameOutcomes[bet][bet2] == GameOutcome.player1){
-            outcome = GameOutcome.player1;
+        else if(gameResult == uint(GameOutcome.player1)){
             accountBalance[player1] = accountBalance[player1].add(stake.mul(2));
         }
-        else{
-            outcome = GameOutcome.player2;
+        else if(gameResult == uint(GameOutcome.player2)){
             accountBalance[player2] = accountBalance[player2].add(stake.mul(2));
+        }
+        else{
+            revert("Something bad happened.");
         }
 
         deleteGame(gameHash);
 
-        emit LogGameEnded(gameHash, msg.sender, bet, outcome);
-        return outcome;
+        emit LogGameEnded(gameHash, msg.sender, bet, gameResult);
+        return gameResult;
     }
 
     /**
@@ -225,6 +220,7 @@ contract RockPaperScissors is Stoppable{
         delete games[gameHash].player2;
         delete games[gameHash].stake;
         delete games[gameHash].bet2;
+        delete games[gameHash].deadline;
 
         games[gameHash].status = Status.ended;
     }
