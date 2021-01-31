@@ -1,7 +1,7 @@
 //B9lab ETH-SUB Ethereum Developer Subscription Course
 //>>> RockPaperScissors <<< - Test file
 //
-//Last update: 03.01.2021
+//Last update: 31.01.2021
 
 const RockPaperScissors = artifacts.require("RockPaperScissors");
 const truffleAssert = require("truffle-assertions");
@@ -184,7 +184,7 @@ contract("RockPaperScissors", async (accounts) => {
             await instance.pauseContract({from: owner});
 
             await truffleAssert.reverts(
-                instance.startGame(gameHash, player2, useMsgValue, {from: player1, value: gameStake}),
+                instance.startGame(gameHash, player2, gameStake, {from: player1, value: gameStake}),
                 "Stoppable: Contract is not running"
             );
         });
@@ -194,48 +194,55 @@ contract("RockPaperScissors", async (accounts) => {
             const hexEmptyGameHash = web3.utils.asciiToHex(emptyGameHash);
 
             await truffleAssert.reverts(
-                instance.startGame(hexEmptyGameHash, player2, useMsgValue, {from: player1, value: gameStake}),
+                instance.startGame(hexEmptyGameHash, player2, gameStake, {from: player1, value: gameStake}),
                 "gameHash has to be provided"
             );
         });
 
         it("should not be possible to start a game without providing 'opponent'", async () => {
             await truffleAssert.reverts(
-                instance.startGame(gameHash, zeroAddress, useMsgValue, {from: player1, value: gameStake}),
+                instance.startGame(gameHash, zeroAddress, gameStake, {from: player1, value: gameStake}),
                 "Bad opponent"
             );
         });
 
         it("should not be possible to start a game with the same gameHash", async () => {
-            await instance.startGame(gameHash, player2, useMsgValue, {from: player1, value: gameStake});
+            await instance.startGame(gameHash, player2, gameStake, {from: player1, value: gameStake});
 
             await truffleAssert.reverts(
-                instance.startGame(gameHash, player2, useMsgValue, {from: player1, value: gameStake}),
+                instance.startGame(gameHash, player2, gameStake, {from: player1, value: gameStake}),
                 "Game must be unique"
             );
         });
 
-        it("should be possible to start a game by player1 with msg.value", async () => {
-            const returned = await instance.startGame.call(gameHash, player2, useMsgValue, {from: player1, value: gameStake});
+        it("should not be possible to start a game if players funds are insufficient to games stake", async () => {
+            await truffleAssert.reverts(
+                instance.startGame(gameHash, player2, gameStake, {from: player1, value: 1}),
+                "Players funds are insufficient"
+            );
+        });
+
+        it("should be possible to start a game by player1 with msg.value only", async () => {
+            const returned = await instance.startGame.call(gameHash, player2, gameStake, {from: player1, value: gameStake});
             assert.strictEqual(returned, true, "game cannot be started by player1");
 
             const contractBalanceBefore = await web3.eth.getBalance(instance.address);
             assert.strictEqual(contractBalanceBefore.toString(10), '0', "contracts balance is not correct");
 
-            const txObj = await instance.startGame(gameHash, player2, useMsgValue, {from: player1, value: gameStake});
+            const txObj = await instance.startGame(gameHash, player2, gameStake, {from: player1, value: gameStake});
             truffleAssert.eventEmitted(txObj, "LogGameStarted");
 
             const logGameHash       = txObj.receipt.logs[0].args.gameHash;
             const logSender         = txObj.receipt.logs[0].args.player1;
+            const logValueSent      = txObj.receipt.logs[0].args.valueSent;
             const logOpponent       = txObj.receipt.logs[0].args.player2;
             const logGameStake      = txObj.receipt.logs[0].args.gameStake;
-            const logUsePlayerStake = txObj.receipt.logs[0].args.usePlayerStake;
             const logDeadline       = txObj.receipt.logs[0].args.deadline;
             assert.strictEqual(logGameHash, gameHash, "gameHash was not logged correctly");
             assert.strictEqual(logSender, player1, "msg.sender was not logged correctly");
+            assert.strictEqual(logValueSent.toString(10), gameStake, "valueSent was not logged correctly");
             assert.strictEqual(logOpponent, player2, "opponent was not logged correctly");
             assert.strictEqual(logGameStake.toString(10), gameStake, "gameStake was not logged correctly");
-            assert.strictEqual(logUsePlayerStake, useMsgValue, "usePlayerStake was not logged correctly");
             assert.strictEqual(
                 logDeadline.toString(10),
                 toBN(txObj.receipt.blockNumber).add(toBN(blocksReactionTime)).toString(10),
@@ -272,14 +279,14 @@ contract("RockPaperScissors", async (accounts) => {
                 {from: owner}
             );
             gameHash = await instance.createGameHash(gameSymbolPlayer1, hexClearPassword, {from: player1});
-            await instance.startGame(gameHash, player2, useMsgValue, {from: player1, value: gameStake});
+            await instance.startGame(gameHash, player2, gameStake, {from: player1, value: gameStake});
         });
 
         it("should not be possible to participate a game when contract is paused", async () => {
             await instance.pauseContract({from: owner});
 
             await truffleAssert.reverts(
-                instance.participateGame(gameHash, gameSymbolPlayer2, useMsgValue, {from: player2, value: gameStake}),
+                instance.participateGame(gameHash, gameSymbolPlayer2, {from: player2, value: gameStake}),
                 "Stoppable: Contract is not running"
             );
         });
@@ -289,19 +296,19 @@ contract("RockPaperScissors", async (accounts) => {
             const hexEmptyGameHash = web3.utils.asciiToHex(emptyGameHash);
 
             await truffleAssert.reverts(
-                instance.participateGame(hexEmptyGameHash, gameSymbolPlayer2, useMsgValue, {from: player2, value: gameStake}),
+                instance.participateGame(hexEmptyGameHash, gameSymbolPlayer2, {from: player2, value: gameStake}),
                 "Game has not been started yet"
             );
         });
 
         it("should not be possible to participate a game with an invalid 'bet'", async () => {
             await truffleAssert.reverts(
-                instance.participateGame(gameHash, 0, useMsgValue, {from: player2, value: gameStake}),
+                instance.participateGame(gameHash, 0, {from: player2, value: gameStake}),
                 "Bet is invalid. Select 'Rock', 'Paper' or 'Scissors'!"
             );
 
             await truffleAssert.fails(
-                instance.participateGame(gameHash, 4, useMsgValue, {from: player2, value: gameStake}),
+                instance.participateGame(gameHash, 4, {from: player2, value: gameStake}),
                 truffleAssert.ErrorType.INVALID_OPCODE
             );
         });
@@ -310,44 +317,44 @@ contract("RockPaperScissors", async (accounts) => {
             const nonStartedGameHash = await instance.createGameHash(Symbol.paper, hexClearPassword, {from: player1});
 
             await truffleAssert.reverts(
-                instance.participateGame(nonStartedGameHash, gameSymbolPlayer2, useMsgValue, {from: player2, value: gameStake}),
+                instance.participateGame(nonStartedGameHash, gameSymbolPlayer2, {from: player2, value: gameStake}),
                 "Game has not been started yet"
             );
         });
 
         it("should not be possible to participate a game by an attacker", async () => {
             await truffleAssert.reverts(
-                instance.participateGame(gameHash, gameSymbolPlayer2, useMsgValue, {from: attacker, value: gameStake}),
+                instance.participateGame(gameHash, gameSymbolPlayer2, {from: attacker, value: gameStake}),
                 "msg.sender is not player2"
             );
         });
 
-        it("should not be possible to participate a game if msg.value is not equal to games stake", async () => {
+        it("should not be possible to participate a game if players funds are insufficient to games stake", async () => {
             await truffleAssert.reverts(
-                instance.participateGame(gameHash, gameSymbolPlayer2, useMsgValue, {from: player2, value: 1}),
-                "msg.value does not match games stake"
+                instance.participateGame(gameHash, gameSymbolPlayer2, {from: player2, value: 1}),
+                "Players funds are insufficient"
             );
         });
 
         it("should be possible to participate a game by player2", async () => {
-            const returned = await instance.participateGame.call(gameHash, gameSymbolPlayer2, useMsgValue, {from: player2, value: gameStake});
+            const returned = await instance.participateGame.call(gameHash, gameSymbolPlayer2, {from: player2, value: gameStake});
             assert.strictEqual(returned, true, "game cannot be participated by player2");
 
             const contractBalanceBefore = await web3.eth.getBalance(instance.address);
             assert.strictEqual(contractBalanceBefore.toString(10), gameStake, "contract balance is not correct");
 
-            const txObj = await instance.participateGame(gameHash, gameSymbolPlayer2, useMsgValue, {from: player2, value: gameStake});
+            const txObj = await instance.participateGame(gameHash, gameSymbolPlayer2, {from: player2, value: gameStake});
             truffleAssert.eventEmitted(txObj, "LogGameParticipated");
 
             const logGameHash       = txObj.receipt.logs[0].args.gameHash;
             const logSender         = txObj.receipt.logs[0].args.player2;
+            const logValueSent      = txObj.receipt.logs[0].args.valueSent;
             const logSymbol         = txObj.receipt.logs[0].args.bet;
-            const logUsePlayerStake = txObj.receipt.logs[0].args.usePlayerStake;
             const logDeadline       = txObj.receipt.logs[0].args.deadline;
             assert.strictEqual(logGameHash, gameHash, "gameHash was not logged correctly");
             assert.strictEqual(logSender, player2, "msg.sender was not logged correctly");
+            assert.strictEqual(logValueSent.toString(10), gameStake, "valueSent was not logged correctly");
             assert.strictEqual(logSymbol.toString(10), gameSymbolPlayer2.toString(10), "bet was not logged correctly");
-            assert.strictEqual(logUsePlayerStake, useMsgValue, "usePlayerStake was not logged correctly");
             assert.strictEqual(
                 logDeadline.toString(10),
                 toBN(txObj.receipt.blockNumber).add(toBN(blocksReactionTime)).toString(10),
@@ -384,8 +391,8 @@ contract("RockPaperScissors", async (accounts) => {
                 {from: owner}
             );
             gameHash = await instance.createGameHash(gameSymbolPlayer1, hexClearPassword, {from: player1});
-            await instance.startGame(gameHash, player2, useMsgValue, {from: player1, value: gameStake});
-            await instance.participateGame(gameHash, gameSymbolPlayer2, useMsgValue, {from: player2, value: gameStake});
+            await instance.startGame(gameHash, player2, gameStake, {from: player1, value: gameStake});
+            await instance.participateGame(gameHash, gameSymbolPlayer2, {from: player2, value: gameStake});
         });
 
         it("should not be possible to end a game when contract is paused", async () => {
@@ -453,6 +460,7 @@ contract("RockPaperScissors", async (accounts) => {
             assert.strictEqual(game.player2, zeroAddress, "player2 is still stored");
             assert.strictEqual(game.stake.toString(10), '0', "gameStake is still stored");
             assert.strictEqual(game.bet2.toString(10), '0', "bet2 is still stored");
+            assert.strictEqual(game.deadline.toString(10), '0', "deadline is still stored");
             assert.strictEqual(game.status.toString(10), (Status.ended).toString(10), "games status was not stored correctly");
 
             const player1balance = await instance.accountBalance(player1);
@@ -473,7 +481,7 @@ contract("RockPaperScissors", async (accounts) => {
                 {from: owner}
             );
             gameHash = await instance.createGameHash(gameSymbolPlayer1, hexClearPassword, {from: player1});
-            await instance.startGame(gameHash, player2, useMsgValue, {from: player1, value: gameStake});
+            await instance.startGame(gameHash, player2, gameStake, {from: player1, value: gameStake});
         });
 
         it("should not be possible to retract a game when contract is paused", async () => {
@@ -511,7 +519,7 @@ contract("RockPaperScissors", async (accounts) => {
         });
 
         it("should not be possible to retract a game when game has ended", async () => {
-            await instance.participateGame(gameHash, gameSymbolPlayer2, useMsgValue, {from: player2, value: gameStake});
+            await instance.participateGame(gameHash, gameSymbolPlayer2, {from: player2, value: gameStake});
             await instance.endGame(gameSymbolPlayer1, hexClearPassword, {from: player1});
 
             await truffleAssert.reverts(
@@ -598,6 +606,7 @@ contract("RockPaperScissors", async (accounts) => {
             assert.strictEqual(gameRetracted.player2, zeroAddress, "player2 is still stored");
             assert.strictEqual(gameRetracted.stake.toString(10), '0', "gameStake is still stored");
             assert.strictEqual(gameRetracted.bet2.toString(10), '0', "bet2 is still stored");
+            assert.strictEqual(gameRetracted.deadline.toString(10), '0', "deadline is still stored");
             assert.strictEqual(gameRetracted.status.toString(10), (Status.ended).toString(10), "games status was not stored correctly");
 
             const contractBalanceAfter = await web3.eth.getBalance(instance.address);
@@ -615,7 +624,7 @@ contract("RockPaperScissors", async (accounts) => {
         });
 
         it("should not be possible to retract a (participated) game (by player1/player2) if deadline is not expired", async () => {
-            await instance.participateGame(gameHash, gameSymbolPlayer2, useMsgValue, {from: player2, value: gameStake});
+            await instance.participateGame(gameHash, gameSymbolPlayer2, {from: player2, value: gameStake});
 
             const game = await instance.games(gameHash);
 
@@ -637,7 +646,7 @@ contract("RockPaperScissors", async (accounts) => {
         });
 
         it("should not be possible to retract a (participated) game (by player1)", async () => {
-            await instance.participateGame(gameHash, gameSymbolPlayer2, useMsgValue, {from: player2, value: gameStake});
+            await instance.participateGame(gameHash, gameSymbolPlayer2, {from: player2, value: gameStake});
             const game = await instance.games(gameHash);
 
             let blockNumber = await web3.eth.getBlockNumber();
@@ -657,7 +666,7 @@ contract("RockPaperScissors", async (accounts) => {
         });
 
         it("should not be possible to retract a (participated) game (by an attacker)", async () => {
-            await instance.participateGame(gameHash, gameSymbolPlayer2, useMsgValue, {from: player2, value: gameStake});
+            await instance.participateGame(gameHash, gameSymbolPlayer2, {from: player2, value: gameStake});
             const game = await instance.games(gameHash);
 
             let blockNumber = await web3.eth.getBlockNumber();
@@ -677,7 +686,7 @@ contract("RockPaperScissors", async (accounts) => {
         });
 
         it("should be possible to retract a (participated) game (by player2)", async () => {
-            await instance.participateGame(gameHash, gameSymbolPlayer2, useMsgValue, {from: player2, value: gameStake});
+            await instance.participateGame(gameHash, gameSymbolPlayer2, {from: player2, value: gameStake});
             const game = await instance.games(gameHash);
 
             let blockNumber = await web3.eth.getBlockNumber();
@@ -706,6 +715,7 @@ contract("RockPaperScissors", async (accounts) => {
             assert.strictEqual(gameRetracted.player2, zeroAddress, "player2 is still stored");
             assert.strictEqual(gameRetracted.stake.toString(10), '0', "gameStake is still stored");
             assert.strictEqual(gameRetracted.bet2.toString(10), '0', "bet2 is still stored");
+            assert.strictEqual(gameRetracted.deadline.toString(10), '0', "deadline is still stored");
             assert.strictEqual(gameRetracted.status.toString(10), (Status.ended).toString(10), "games status was not stored correctly");
 
             const contractBalanceAfter = await web3.eth.getBalance(instance.address);
@@ -734,11 +744,11 @@ contract("RockPaperScissors", async (accounts) => {
                 {from: owner}
             );
             gameHash = await instance.createGameHash(Symbol.rock, hexClearPassword, {from: player1});
-            await instance.startGame(gameHash, player2, useMsgValue, {from: player1, value: gameStake});
+            await instance.startGame(gameHash, player2, gameStake, {from: player1, value: gameStake});
         });
 
         it("- draw", async () => {
-            await instance.participateGame(gameHash, Symbol.rock, useMsgValue, {from: player2, value: gameStake});
+            await instance.participateGame(gameHash, Symbol.rock, {from: player2, value: gameStake});
             const txObj = await instance.endGame(Symbol.rock, hexClearPassword, {from: player1});
 
             const logGameResult = txObj.receipt.logs[0].args.gameResult;
@@ -746,28 +756,15 @@ contract("RockPaperScissors", async (accounts) => {
         });
 
         it("- player1 wins", async () => {
-            await instance.participateGame(gameHash, Symbol.scissors, useMsgValue, {from: player2, value: gameStake});
+            await instance.participateGame(gameHash, Symbol.scissors, {from: player2, value: gameStake});
             const txObj = await instance.endGame(Symbol.rock, hexClearPassword, {from: player1});
 
             const logGameResult = txObj.receipt.logs[0].args.gameResult;
             assert.strictEqual(logGameResult.toString(10), (gameOutcome.player1).toString(10), "gameResult was not correct");
         });
 
-        it("-- should not be possible to start a game by player1 with player stake when sending value", async () => {
-            await instance.participateGame(gameHash, Symbol.scissors, useMsgValue, {from: player2, value: gameStake});
-            await instance.endGame(Symbol.rock, hexClearPassword, {from: player1});
-
-            //Start 2nd game
-            const newGameHash = await instance.createGameHash(Symbol.paper, hexClearPassword, {from: player1});
-
-            truffleAssert.reverts(
-                instance.startGame(newGameHash, player2, usePlayerStake, {from: player1, value: gameStake}),
-                "Sending value while using players stake is prohibited"
-            );
-        });
-
-        it("-- should be possible to start a game by player1 with player stake", async () => {
-            await instance.participateGame(gameHash, Symbol.scissors, useMsgValue, {from: player2, value: gameStake});
+        it("-- should be possible to start a game by player1 with player stake only", async () => {
+            await instance.participateGame(gameHash, Symbol.scissors, {from: player2, value: gameStake});
             await instance.endGame(Symbol.rock, hexClearPassword, {from: player1});
 
             //Start 2nd game
@@ -777,16 +774,16 @@ contract("RockPaperScissors", async (accounts) => {
 
             const newGameHash = await instance.createGameHash(Symbol.paper, hexClearPassword, {from: player1});
 
-            const returned = await instance.startGame.call(newGameHash, player2, usePlayerStake, {from: player1});
+            const returned = await instance.startGame.call(newGameHash, player2, newGameStake, {from: player1});
             assert.strictEqual(returned, true, "game cannot be started by player1");
 
-            const txObj = await instance.startGame(newGameHash, player2, usePlayerStake, {from: player1});
+            const txObj = await instance.startGame(newGameHash, player2, newGameStake, {from: player1});
             truffleAssert.eventEmitted(txObj, "LogGameStarted");
 
+            const logValueSent      = txObj.receipt.logs[0].args.valueSent;
             const logGameStake      = txObj.receipt.logs[0].args.gameStake;
-            const logUsePlayerStake = txObj.receipt.logs[0].args.usePlayerStake;
+            assert.strictEqual(logValueSent.toString(10), '0', "valueSent was not logged correctly");
             assert.strictEqual(logGameStake.toString(10), newGameStake, "newGameStake was not logged correctly");
-            assert.strictEqual(logUsePlayerStake, usePlayerStake, "usePlayerStake was not logged correctly");
 
             const contractBalanceAfter = await web3.eth.getBalance(instance.address);
             const player1ContractBalanceAfter = await instance.accountBalance(player1);
@@ -806,68 +803,59 @@ contract("RockPaperScissors", async (accounts) => {
             assert.strictEqual(game.player2, player2, "player2 was not stored correctly");
             assert.strictEqual(game.stake.toString(10), newGameStake, "newGameStake was not stored correctly");
             assert.strictEqual(game.bet2.toString(10), (Symbol.none).toString(10), "bet2 storage slot was used by mistake");
+            assert.strictEqual(
+                game.deadline.toString(10),
+                toBN(txObj.receipt.blockNumber).add(toBN(blocksReactionTime)).toString(10),
+                "deadline was not stored correctly"
+            );
             assert.strictEqual(game.status.toString(10), (Status.started).toString(10), "games status was not stored correctly");
         });
 
         it("- player2 wins", async () => {
-            await instance.participateGame(gameHash, Symbol.paper, useMsgValue, {from: player2, value: gameStake});
+            await instance.participateGame(gameHash, Symbol.paper, {from: player2, value: gameStake});
             const txObj = await instance.endGame(Symbol.rock, hexClearPassword, {from: player1});
 
             const logGameResult = txObj.receipt.logs[0].args.gameResult;
             assert.strictEqual(logGameResult.toString(10), (gameOutcome.player2).toString(10), "gameResult was not correct");
         });
 
-        it("-- should not be possible to participate a game by player2 with player stake when sending value", async () => {
-            await instance.participateGame(gameHash, Symbol.paper, useMsgValue, {from: player2, value: gameStake});
-            await instance.endGame(Symbol.rock, hexClearPassword, {from: player1});
-
-            //Start 2nd game
-            const newGameHash = await instance.createGameHash(Symbol.paper, hexClearPassword, {from: player1});
-            await instance.startGame(newGameHash, player2, useMsgValue, {from: player1, value: gameStake}),
-
-            truffleAssert.reverts(
-                instance.participateGame(newGameHash, Symbol.paper, usePlayerStake, {from: player2, value: gameStake}),
-                "Sending value while using players stake is prohibited"
-            );
-        });
-
-        it("-- should not be possible to participate a game by player2 with player stake when amount insufficient", async () => {
-            await instance.participateGame(gameHash, Symbol.paper, useMsgValue, {from: player2, value: gameStake});
+        it("-- should not be possible to participate a game by player2 with player stake only if players funds are insufficient", async () => {
+            await instance.participateGame(gameHash, Symbol.paper, {from: player2, value: gameStake});
             await instance.endGame(Symbol.rock, hexClearPassword, {from: player1});
 
             //Start 2nd game
             const player2contractBalanceBefore = await instance.accountBalance(player2);
 
             const newGameHash = await instance.createGameHash(Symbol.paper, hexClearPassword, {from: player1});
-            await instance.startGame(newGameHash, player2, useMsgValue, {from: player1, value: player2contractBalanceBefore+1}),
+            await instance.startGame(newGameHash, player2, player2contractBalanceBefore+1, {from: player1, value: player2contractBalanceBefore+1}),
 
             truffleAssert.reverts(
-                instance.participateGame(newGameHash, Symbol.paper, usePlayerStake, {from: player2, value: gameStake}),
-                "Players stake is insufficient"
+                instance.participateGame(newGameHash, Symbol.paper, {from: player2}),
+                "Players funds are insufficient"
             );
         });
 
-        it("-- should be possible to participate a game by player2 with player stake", async () => {
-            await instance.participateGame(gameHash, Symbol.paper, useMsgValue, {from: player2, value: gameStake});
+        it("-- should be possible to participate a game by player2 with player stake only", async () => {
+            await instance.participateGame(gameHash, Symbol.paper, {from: player2, value: gameStake});
             await instance.endGame(Symbol.rock, hexClearPassword, {from: player1});
 
             //Start 2nd game
             const contractBalanceBefore = await web3.eth.getBalance(instance.address);
             const player2contractBalanceBefore = await instance.accountBalance(player2);
-            const newGameStake = '50';
+            const newGameStake = gameStake/2;
 
             const newGameHash = await instance.createGameHash(Symbol.paper, hexClearPassword, {from: player1});
-            await instance.startGame(newGameHash, player2, useMsgValue, {from: player1, value: newGameStake});
+            await instance.startGame(newGameHash, player2, newGameStake, {from: player1, value: newGameStake});
 
             //Participate 2nd game
-            const returned = await instance.participateGame.call(newGameHash, Symbol.paper, usePlayerStake, {from: player2});
+            const returned = await instance.participateGame.call(newGameHash, Symbol.paper, {from: player2});
             assert.strictEqual(returned, true, "game cannot be participated by player2");
 
-            const txObj = await instance.participateGame(newGameHash, Symbol.paper, usePlayerStake, {from: player2});
+            const txObj = await instance.participateGame(newGameHash, Symbol.paper, {from: player2});
             truffleAssert.eventEmitted(txObj, "LogGameParticipated");
 
-            const logUsePlayerStake = txObj.receipt.logs[0].args.usePlayerStake;
-            assert.strictEqual(logUsePlayerStake, usePlayerStake, "usePlayerStake was not logged correctly");
+            const logValueSent = txObj.receipt.logs[0].args.valueSent;
+            assert.strictEqual(logValueSent.toString(10), '0', "valueSent was not logged correctly");
 
             const contractBalanceAfter = await web3.eth.getBalance(instance.address);
             const player2contractBalanceAfter = await instance.accountBalance(player2);
@@ -895,8 +883,8 @@ contract("RockPaperScissors", async (accounts) => {
                 {from: owner}
             );
             gameHash = await instance.createGameHash(Symbol.rock, hexClearPassword, {from: player1});
-            await instance.startGame(gameHash, player2, useMsgValue, {from: player1, value: gameStake});
-            await instance.participateGame(gameHash, Symbol.scissors, useMsgValue, {from: player2, value: gameStake});
+            await instance.startGame(gameHash, player2, gameStake, {from: player1, value: gameStake});
+            await instance.participateGame(gameHash, Symbol.scissors, {from: player2, value: gameStake});
             await instance.endGame(Symbol.rock, hexClearPassword, {from: player1});
         });
 

@@ -3,7 +3,7 @@
 //B9lab ETH-SUB Ethereum Developer Subscription Course
 //>>> RockPaperScissors <<<
 //
-//Last update: 30.01.2021
+//Last update: 31.01.2021
 
 pragma solidity 0.7.6;
 
@@ -72,8 +72,8 @@ contract RockPaperScissors is Stoppable{
     /**
      * Events
      */
-    event LogGameStarted(bytes32 indexed gameHash, address indexed player1, address indexed player2, uint gameStake, bool usePlayerStake, uint deadline);
-    event LogGameParticipated(bytes32 indexed gameHash, address indexed player2, Symbol bet, bool usePlayerStake, uint deadline);
+    event LogGameStarted(bytes32 indexed gameHash, address indexed player1, uint valueSent, address indexed player2, uint gameStake, uint deadline);
+    event LogGameParticipated(bytes32 indexed gameHash, address indexed player2, uint valueSent, Symbol bet, uint deadline);
     event LogGameEnded(bytes32 indexed gameHash, address indexed player1, Symbol bet, uint gameResult);
     event LogGameRetracted(bytes32 indexed gameHash, address indexed player);
     event LogWithdraw(address indexed player, uint amount);
@@ -106,23 +106,18 @@ contract RockPaperScissors is Stoppable{
      *
      * @param gameHash gameHash that was created by createGameHash() by player1
      * @param opponent The address of player2 which player1 wants to play with
-     * @param usePlayerStake Player1 can decide to use either msg.value or her/his player contract balance to play
+     * @param gameStake Player1 decides on the amount of the game stake and can use msg.value and her/his player contract balance to play
      */
-    function startGame(bytes32 gameHash, address opponent, bool usePlayerStake) public payable onlyIfRunning returns(bool success){
+    function startGame(bytes32 gameHash, address opponent, uint gameStake) public payable onlyIfRunning returns(bool success){
         require(gameHash != "", "gameHash has to be provided");
         require(opponent != address(0x0) && opponent != msg.sender, "Bad opponent");
 
         require(games[gameHash].status == Status.nonExistent, "Game must be unique");
 
-        uint gameStake;
-        if(usePlayerStake){
-            require(msg.value == 0, "Sending value while using players stake is prohibited");
-            gameStake = accountBalance[msg.sender];
-            accountBalance[msg.sender] = 0;
-        }
-        else{
-            gameStake = msg.value;
-        }
+        uint playerFunds = accountBalance[msg.sender].add(msg.value);
+        require(gameStake <= playerFunds, "Players funds are insufficient");
+
+        accountBalance[msg.sender] = playerFunds.sub(gameStake);
 
         uint deadline = block.number.add(blocksReactionTime);
 
@@ -132,7 +127,7 @@ contract RockPaperScissors is Stoppable{
         games[gameHash].deadline = deadline;
         games[gameHash].status = Status.started;
 
-        emit LogGameStarted(gameHash, msg.sender, opponent, gameStake, usePlayerStake, deadline);
+        emit LogGameStarted(gameHash, msg.sender, msg.value, opponent, gameStake, deadline);
         return true;
     }
 
@@ -141,24 +136,18 @@ contract RockPaperScissors is Stoppable{
      *
      * @param gameHash gameHash that player2 is associated with
      * @param bet The game symbol selected by player2
-     * @param usePlayerStake Player2 can decide to use either msg.value or her/his player contract balance to play
      */
-    function participateGame(bytes32 gameHash, Symbol bet, bool usePlayerStake) public payable onlyIfRunning returns(bool success){
+    function participateGame(bytes32 gameHash, Symbol bet) public payable onlyIfRunning returns(bool success){
         require(Symbol.none < bet, "Bet is invalid. Select 'Rock', 'Paper' or 'Scissors'!");
 
         require(games[gameHash].status == Status.started, "Game has not been started yet");
         require(games[gameHash].player2 == msg.sender, "msg.sender is not player2");
 
         uint gameStake = games[gameHash].stake;
-        if(usePlayerStake){
-            uint playerStake = accountBalance[msg.sender];
-            require(gameStake <= playerStake, "Players stake is insufficient");
-            require(msg.value == 0, "Sending value while using players stake is prohibited");
-            accountBalance[msg.sender] = playerStake.sub(gameStake);
-        }
-        else{
-            require(gameStake == msg.value, "msg.value does not match games stake");
-        }
+        uint playerFunds = accountBalance[msg.sender].add(msg.value);
+        require(gameStake <= playerFunds, "Players funds are insufficient");
+
+        accountBalance[msg.sender] = playerFunds.sub(gameStake);
 
         uint deadline = block.number.add(blocksReactionTime);
 
@@ -166,7 +155,7 @@ contract RockPaperScissors is Stoppable{
         games[gameHash].deadline = deadline;
         games[gameHash].status = Status.participated;
 
-        emit LogGameParticipated(gameHash, msg.sender, bet, usePlayerStake, deadline);
+        emit LogGameParticipated(gameHash, msg.sender, msg.value, bet, deadline);
         return true;
     }
 

@@ -1,6 +1,6 @@
 {
   "name": "b9lab_ethsub-project-rockpaperscissors",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Small project and assisted by https://academy.b9lab.com",
   "private": true,
   "main": "truffle-config.js",
