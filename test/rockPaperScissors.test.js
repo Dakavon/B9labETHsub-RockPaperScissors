@@ -42,9 +42,6 @@ contract("RockPaperScissors", async (accounts) => {
     const emptyPassword = "";
     const hexEmptyPassword = web3.utils.asciiToHex(emptyPassword);
 
-    const useMsgValue = false;
-    const usePlayerStake = true;
-
     const gameStake = '1000';
     const blocksReactionTime = '100';
 

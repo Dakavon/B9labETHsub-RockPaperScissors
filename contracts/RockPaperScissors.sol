@@ -74,7 +74,7 @@ contract RockPaperScissors is Stoppable{
      */
     event LogGameStarted(bytes32 indexed gameHash, address indexed player1, uint valueSent, address indexed player2, uint gameStake, uint deadline);
     event LogGameParticipated(bytes32 indexed gameHash, address indexed player2, uint valueSent, Symbol bet, uint deadline);
-    event LogGameEnded(bytes32 indexed gameHash, address indexed player1, Symbol bet, uint gameResult);
+    event LogGameEnded(bytes32 indexed gameHash, address indexed player1, Symbol bet, GameOutcome gameResult);
     event LogGameRetracted(bytes32 indexed gameHash, address indexed player);
     event LogWithdraw(address indexed player, uint amount);
     event LogBlocksReactionTimeSet(address indexed sender, uint newBlocksReactionTime);
@@ -165,7 +165,7 @@ contract RockPaperScissors is Stoppable{
      * @param bet The game symbol that was selected by player1 during game start
      * @param purePassword The password chosen by player1 during game start
      */
-    function endGame(Symbol bet, bytes32 purePassword) public onlyIfRunning returns(uint gameResult){
+    function endGame(Symbol bet, bytes32 purePassword) public onlyIfRunning returns(GameOutcome gameResult){
         require(Symbol.none < bet, "Bet is invalid. Select 'Rock', 'Paper' or 'Scissors'!");
 
         bytes32 gameHash = createGameHash(bet, purePassword);
@@ -178,16 +178,16 @@ contract RockPaperScissors is Stoppable{
 
         //Identify winning player:
         //  (3 + betPlayer1 - betPlayer2) % 3
-        gameResult = (uint(3).add(uint(bet)).sub(uint(bet2))).mod(3);
+        gameResult = GameOutcome((uint(3).add(uint(bet)).sub(uint(bet2))).mod(3));
 
-        if(gameResult == uint(GameOutcome.draw)){
+        if(gameResult == GameOutcome.draw){
             accountBalance[player1] = accountBalance[player1].add(stake);
             accountBalance[player2] = accountBalance[player2].add(stake);
         }
-        else if(gameResult == uint(GameOutcome.player1)){
+        else if(gameResult == GameOutcome.player1){
             accountBalance[player1] = accountBalance[player1].add(stake.mul(2));
         }
-        else if(gameResult == uint(GameOutcome.player2)){
+        else if(gameResult == GameOutcome.player2){
             accountBalance[player2] = accountBalance[player2].add(stake.mul(2));
         }
         else{
